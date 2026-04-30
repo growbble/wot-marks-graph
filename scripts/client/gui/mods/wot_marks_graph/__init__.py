@@ -3,14 +3,6 @@
 # Автозагрузка через WoT Mod System
 
 import BigWorld
-import GUI
-
-from gui.Scaleform.daapi.view.Alias import CompomemntAliases
-from gui.Scaleform.framework.entities.View import View
-from gui.Scaleform.framework.managers import loaders
-
-from gui.shared import events, g_eventBus, EVENT_BUS_SCOPE
-from gui.shared.utils.requesters import StatsRequester
 
 from wot_marks_graph.mod_core import MarksGraphCore
 
@@ -26,7 +18,7 @@ def init():
 
 
 def fini():
-    """Вызывается при выгрузке мода (например, при смене конфигурации модов)."""
+    """Вызывается при выгрузке мода."""
     global g_core
     if g_core:
         g_core.destroy()
