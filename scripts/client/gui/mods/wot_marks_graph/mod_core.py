@@ -1,42 +1,42 @@
 """
-mod_core.py — Ядро мода MarksGraph для Lesta WoT (без Flash).
+mod_core.py — Ядро мода MarksGraph (Flash/SWF версия).
 
-Рисует виджет и график через BigWorld GUI напрямую.
+Загружает SWF-виджет через flash_bridge, управляет данными
+и событиями в ангаре/бою.
 """
 
 import os
 import json
-import time
 import BigWorld
-import GUI
-
 from gui.shared import g_eventBus, EVENT_BUS_SCOPE
 from gui.shared.events import ViewEventType
 
 from wot_marks_graph.config import ModConfig
 from wot_marks_graph.stat_tracker import StatTracker
-from wot_marks_graph.widget_renderer import WidgetRenderer
+from wot_marks_graph.flash_bridge import initBridge, getBridge, fini as bridgeFini
 
 MOD_DIR = os.path.dirname(os.path.abspath(__file__))
-# data/ — рядом с модом: res_mods/1.42.0/scripts/client/gui/mods/wot_marks_graph/../../../../../../data/
-DATA_DIR = os.path.normpath(os.path.join(MOD_DIR, '..', '..', '..', '..', '..', '..', '..', '..', 'data'))
+DATA_DIR = os.path.normpath(os.path.join(
+    MOD_DIR,
+    '..', '..', '..', '..', '..', '..', '..', '..', 'data'
+))
 
 
 class MarksGraphCore:
-    """Ядро мода — управление жизненным циклом."""
+    """Ядро мода — загрузка виджета, события, данные."""
 
     def __init__(self):
         self.config = ModConfig(DATA_DIR)
         self.stat_tracker = StatTracker(DATA_DIR)
-        self.widget = None
         self._current_vehicle = None
         self._in_battle = False
-        self._mouse_hooked = False
+        self._initialized = False
 
     def initialize(self):
         self.config.load()
         self.stat_tracker.load_history()
         self._setup_listeners()
+        self._initialized = True
 
     def _setup_listeners(self):
         g_eventBus.addListener(
@@ -44,30 +44,22 @@ class MarksGraphCore:
             self._on_lobby_view,
             EVENT_BUS_SCOPE.LOBBY,
         )
-        g_eventBus.addListener(
-            ViewEventType.BATTLE_LOADING,
-            self._on_battle_loading,
-            EVENT_BUS_SCOPE.BATTLE,
-        )
-        g_eventBus.addListener(
-            ViewEventType.BATTLE_RESULTS,
-            self._on_battle_results,
-            EVENT_BUS_SCOPE.BATTLE,
-        )
 
     def on_lobby_ready(self):
-        """Вызывается через ~0.5с после init — ангар уже загружен."""
+        """~0.5с после init — ангар готов."""
+        if not self._initialized:
+            self.initialize()
         self._create_widget()
         self._update_vehicle_info()
 
-    def _create_widget(self):
-        """Создать Python-виджет без Flash."""
-        cfg = self.config.data
-        pos = cfg.get("hangar_position", {"x": 250, "y": 50})
+    # ==================== SWF Виджет ====================
 
-        self.widget = WidgetRenderer(on_drag_end_cb=self._on_drag_ended)
-        self.widget.create(pos["x"], pos["y"])
-        self.widget.set_locked(cfg.get("battle_locked", False))
+    def _create_widget(self):
+        """Создать Scaleform-мост и загрузить SWF."""
+        bridge = initBridge()
+        # TODO: добавить LoadView / attachMovie для MarkWidget.swf
+        # Тут нужен контекст UiScaleformManager или AS_система
+        # Пока просто создаём мост
 
     def _update_vehicle_info(self):
         try:
@@ -80,91 +72,71 @@ class MarksGraphCore:
                     vehicle.intCD, vehicle.name
                 )
                 self._current_vehicle = vehicle
-                self._update_widget_data(vehicle.name, mark)
+                self._update_widget(vehicle.name, mark)
         except Exception as e:
-            print(f"[MarksGraph] get_vehicle_info error: {e}")
+            print(f"[MarksGraph] info error: {e}")
 
-    def _update_widget_data(self, tank_name, mark_percent):
-        if self.widget:
-            self.widget.set_tank_info(tank_name)
-            self.widget.set_mark_pct(mark_percent, 0.0)
+    def _update_widget(self, tank_name, mark_data):
+        """Отправить данные в SWF."""
+        bridge = getBridge()
+        if bridge is None:
+            return
 
-    # === Обработчики событий ===
+        if isinstance(mark_data, dict):
+            percent = mark_data.get("mark", 0.0)
+            mark_color = mark_data.get("markColor", 0x888888)
+            change = mark_data.get("changeToday", 0.0)
+            mark_label = mark_data.get("markLabel", "")
+        else:
+            percent = float(mark_data) if mark_data else 0.0
+            mark_color = self._get_mark_color(percent)
+            change = 0.0
+            mark_label = self._get_mark_label(percent)
+
+        bridge.setBattleData(tank_name)
+        bridge.updateStats(percent, mark_color, change, mark_label)
+
+    # ==================== События ====================
 
     def _on_lobby_view(self, event):
-        BigWorld.callback(0.3, self._update_vehicle_info)
+        """Ангар загружен — обновляем данные."""
+        self._update_vehicle_info()
 
-    def _on_battle_loading(self, event):
+    def on_battle_started(self, vehicle_descr):
+        """Вызывается при старте боя."""
         self._in_battle = True
-        if self.widget:
-            self.widget.set_battle_mode(True)
-            if self.config.data.get("battle_locked", False):
-                self.widget.set_locked(True)
 
-    def _on_battle_results(self, event):
+    def on_battle_end(self, new_mark_percent):
+        """Бой завершён — сохраняем статистику."""
         self._in_battle = False
-        try:
-            from gui.battle_results import BattleResults
-            br = BattleResults()
-            new_mark = self._get_post_battle_mark(br)
-            if self._current_vehicle:
-                self.stat_tracker.record_battle(
-                    vehicle_name=self._current_vehicle.name,
-                    mark_percent=new_mark,
-                )
-                self._update_widget_data(self._current_vehicle.name, new_mark)
-                self._render_graph()
-        except Exception as e:
-            print(f"[MarksGraph] battle_results error: {e}")
+        if self._current_vehicle:
+            self.stat_tracker.record_battle(
+                vehicle_name=self._current_vehicle.name,
+                mark_percent=new_mark_percent,
+            )
+            self._update_widget(self._current_vehicle.name, new_mark_percent)
 
-        if self.widget:
-            self.widget.set_battle_mode(False)
-            self.widget.set_locked(self.config.data.get("battle_locked", False))
+    # ==================== Вспомогательное ====================
 
-    def _get_post_battle_mark(self, br):
-        try:
-            if hasattr(br, 'personal') and hasattr(br.personal, 'avrMastery'):
-                return br.personal.avrMastery
-        except Exception:
-            pass
-        return self.stat_tracker.get_last_known_mark()
+    @staticmethod
+    def _get_mark_color(pct):
+        if pct >= 95:
+            return 0xE8B800
+        elif pct >= 85:
+            return 0xCF7E44
+        elif pct >= 65:
+            return 0x4D9DE0
+        return 0x888888
 
-    # === Обработчики UI ===
-
-    def _on_plus_clicked(self):
-        if self.widget:
-            self.widget.toggle_graph()
-            if self.widget._graph_expanded:
-                self._render_graph()
-
-    def _on_pin_clicked(self):
-        cfg = self.config.data
-        cfg["battle_locked"] = not cfg.get("battle_locked", False)
-        self.config.save()
-        if self.widget:
-            self.widget.set_locked(cfg["battle_locked"])
-
-    def _on_filter_changed(self, filter_key):
-        self.config.data["filter"] = filter_key
-        self.config.save()
-        self._render_graph()
-
-    def _on_drag_ended(self, x, y):
-        key = "battle_position" if self._in_battle else "hangar_position"
-        self.config.data[key] = {"x": x, "y": y}
-        self.config.save()
-
-    def _render_graph(self):
-        if not self._current_vehicle:
-            return
-        filter_key = self.config.data.get("filter", "week")
-        graph_data = self.stat_tracker.build_graph_data(
-            self._current_vehicle.name,
-            filter_key,
-        )
-        points = graph_data.get("points", [])
-        if self.widget:
-            self.widget.render_graph(points)
+    @staticmethod
+    def _get_mark_label(pct):
+        if pct >= 95:
+            return "3"
+        elif pct >= 85:
+            return "2"
+        elif pct >= 65:
+            return "1"
+        return ""
 
     def destroy(self):
         try:
@@ -172,16 +144,6 @@ class MarksGraphCore:
                 ViewEventType.LOBBY_VIEW, self._on_lobby_view,
                 EVENT_BUS_SCOPE.LOBBY,
             )
-            g_eventBus.removeListener(
-                ViewEventType.BATTLE_LOADING, self._on_battle_loading,
-                EVENT_BUS_SCOPE.BATTLE,
-            )
-            g_eventBus.removeListener(
-                ViewEventType.BATTLE_RESULTS, self._on_battle_results,
-                EVENT_BUS_SCOPE.BATTLE,
-            )
         except Exception:
             pass
-        if self.widget:
-            self.widget.destroy()
-            self.widget = None
+        bridgeFini()

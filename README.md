@@ -1,97 +1,64 @@
-# WoT Marks Graph
+# wot-marks-graph
 
-Мод для **Lesta World of Tanks 1.42.0**, который показывает график прогресса отметок на стволе прямо в ангаре.
-
-**Не требует компиляции Flash** — весь UI рисуется через BigWorld GUI из Python.
-
-## Возможности
-
-- 📊 График изменения процента отметки за день/неделю/месяц
-- 🎯 Текущий процент отметки + изменение после боя
-- 🖱️ Drag & Drop для перемещения виджета
-- 🔒 Блокировка позиции в бою
-- 💾 Автосохранение истории боёв (data/history.json)
-- 🎨 Стиль Catppuccin Mocha (тёмная тема)
-
-## Структура мода
-
-```
-wot-marks-graph/
-├── scripts/client/gui/mods/wot_marks_graph/   ← Python-часть (автозагрузка)
-│   ├── __init__.py                             ← Точка входа (init/fini)
-│   ├── mod_core.py                             ← Ядро мода
-│   ├── widget_renderer.py                      ← Рисование виджета через BigWorld GUI
-│   ├── stat_tracker.py                         ← Статистика и история боёв
-│   ├── config.py                               ← Конфигурация (data/config.json)
-│   ├── vehicle_hook.py                         ← Получение текущего танка
-│   └── utils.py                                ← Вспомогательные функции
-├── data/                                       ← Данные (создаётся автоматически)
-│   ├── config.json
-│   └── history.json
-└── README.md
-```
-
-## Установка
-
-Просто скопируй папку `scripts/` в:
-
-```
-<папка_игры>/res_mods/1.42.0.7246/
-```
-
-Должно получиться:
-```
-res_mods/1.42.0.7246/scripts/client/gui/mods/wot_marks_graph/__init__.py
-res_mods/1.42.0.7246/scripts/client/gui/mods/wot_marks_graph/mod_core.py
-... (все файлы из scripts/)
-```
-
-Данные сохраняются в `data/` (папка создаётся автоматически при первом запуске).
-
-## Использование
-
-После установки и запуска игры:
-
-- **Ангар**: виджет появляется в левом верхнем углу
-- **Кнопка +** (или ─) — открыть/закрыть график
-- **Кнопка 📌** — зафиксировать позицию в бою (зелёная = заблокировано)
-- **Перетаскивание** — зажми и тащи виджет мышью
-- **История** сохраняется автоматически после каждого боя
-
-## Конфигурация
-
-Файл `data/config.json` создаётся автоматически:
-
-```json
-{
-  "hangar_position": {"x": 250, "y": 50},
-  "battle_position": {"x": 250, "y": 100},
-  "battle_locked": true,
-  "filter": "week",
-  "style": {
-    "widget_width": 220,
-    "widget_height": 60,
-    "graph_width": 380,
-    "graph_height": 220
-  }
-}
-```
-
-## Сборка из репозитория
-
-```bash
-git clone https://github.com/growbble/wot-marks-graph
-cd wot-marks-graph
-# Скопировать scripts/ в res_mods/ — и готово
-cp -r scripts /path/to/game/res_mods/1.42.0.7246/
-```
+Виджет прогресса отметок на стволе для **Lesta World of Tanks 1.42.0** с интерактивным графиком.
 
 ## Особенности
 
-- 🚫 **Без Flash/SWF** — весь рендеринг через BigWorld GUI
-- 🐍 **Чистый Python** — никаких компиляторов, просто копирование
-- 📦 **Один файл мода** — никаких .wotmod архивов
+- 📊 **Интерактивный график** изменения процента отметки по боям
+- 🎨 **Catppuccin Mocha** — тёмная тема, не режет глаза
+- 🖱️ **Drag & Drop** — перемещение виджета
+- 📌 **Pin** — блокировка от случайного перетаскивания
+- ✅ SWF-виджет (Scaleform GFx) — плавно и красиво
+- 💾 Автосохранение позиции и настроек
+
+## Установка
+1. Скачай последний [релиз](https://github.com/growbble/wot-marks-graph/releases)
+2. Распакуй в `World_of_Tanks_LESTA/res_mods/1.42.0/`
+3. Запусти игру — виджет появится в ангаре
+
+## Установка из исходников (сборка SWF)
+Если хочешь пересобрать `MarkWidget.swf`:
+
+**Требования:** Apache Flex SDK 4.16.1+ с playerglobal.swc для Flash Player 11
+
+```bash
+mxmlc \
+  +configname=flash \
+  -target-player=11.0 \
+  -swf-version=16 \
+  -output=MarkWidget.swf \
+  flash_src/MarkWidget.as
+```
+
+## Структура
+```
+wot-marks-graph/
+├── flash_src/
+│   └── MarkWidget.as          # AS3 исходник виджета
+├── build/
+│   └── MarkWidget.swf         # скомпилированный SWF
+└── scripts/client/gui/mods/wot_marks_graph/
+    ├── __init__.py             # точка входа
+    ├── mod_core.py             # ядро мода
+    ├── flash_bridge.py         # мост Python ↔ Scaleform
+    ├── config.py               # настройки (JSON)
+    ├── stat_tracker.py         # статистика машин
+    ├── utils.py                # утилиты
+    └── vehicle_hook.py         # получение текущего танка
+```
+
+## Цвета отметок
+| %      | Цвет      |
+|--------|-----------|
+| < 65%  | Серый     |
+| 65-85% | Синий      |
+| 85-95% | Оранжевый |
+| 95%+   | Золото    |
+
+## Сборка SWF для Lesta WoT
+Мод использует SWF-виджет через Scaleform GFx (встроен в Lesta WoT).
+Компиляция: Apache Flex SDK 4.16.1, target Flash Player 11, SWF version 16.
+Playerglobal.swc: https://github.com/nexussays/playerglobal
 
 ## Лицензия
-
 MIT

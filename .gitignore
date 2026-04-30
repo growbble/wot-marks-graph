@@ -1,5 +1,5 @@
 __pycache__/
-*.swf
+#*.swf
 *.py[cod]
 *$py.class
 *.so
@@ -12,3 +12,4 @@ build/
 *.swp
 *.swo
 *~
+flash_src/frameworks
