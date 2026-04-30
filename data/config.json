@@ -1,0 +1,22 @@
+{
+  "hangar_position": {"x": 250, "y": 300},
+  "battle_position": {"x": 250, "y": 50},
+  "battle_locked": false,
+  "expanded": false,
+  "filter": "week",
+  "style": {
+    "widget_width": 220,
+    "widget_height": 32,
+    "graph_width": 250,
+    "graph_height": 190,
+    "opacity": 0.85,
+    "glass_blur": 10,
+    "accent_color": "0x88CCFF",
+    "text_color": "0xFFFFFF",
+    "positive_color": "0x44FF88",
+    "negative_color": "0xFF4466",
+    "lock_active_color": "0xFFD700",
+    "lock_inactive_color": "0xAAAAAA",
+    "animation_duration_ms": 300
+  }
+}
